@@ -7,6 +7,8 @@
   :pathname "src"
   :serial t
   :components ((:file "package")
-	       (:file "poker")))
+	       (:file "data-structures")
+	       (:file "poker")
+	       ))
 
 
