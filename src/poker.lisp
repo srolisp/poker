@@ -58,66 +58,22 @@
     (funcall (funcall table 'insert) '(C) 0)
   table))
 
-(defun generate (suits select candidate merge post-proc &optional
-							  (stable (suit-table))
-							  (table (make-table))
-							  (selected-cards nil)
-							  (acc nil))
-  (format t "~a ~a ~a " suits selected-cards acc)
-  (cond ((null suits) acc)
-	((= (length selected-cards) +number-in-hand+)
-	 (let ((records (funcall (funcall stable 'records))))
-	   (let ((freq (mapcar #'(lambda (r) (cdr r)) records))) ; (3 1 1)
-	     (let ((found (funcall (funcall table 'lookup) freq))) ; TODO: case? and result?
-	       (format t "~a ~a ~%" freq found)
-	       (let ((new-acc nil))
-		 ;; if found, it means that suits already is maded.
-		 (cond (found (setf new-acc acc))
-		       (t (setf new-acc (cons selected-cards acc))
-			  (funcall (funcall table 'insert) freq selected-cards))) ; update table
-		 ;; reset
-		 (map nil #'(lambda (r)
-			      (funcall (funcall stable 'insert) (list (car r)) 0))
-		      records)
-		 (generate suits
-			   select
-			   candidate
-			   merge
-			   post-proc
-			   stable
-			   table
-			   (cdr selected-cards)
-			   new-acc))))))
-	
-	(t (print "in (length < +number-in-hand+)")
-	   (let ((selected-card (funcall select suits)))
-	     (let ((candidate-cards (funcall candidate selected-card))
-		   (in-hands (cons selected-card selected-cards)))
-	       (funcall post-proc selected-card stable)
-	       (if (= (length in-hands) +number-in-hand+)
-		   (generate (cdr suits)
-			 select
-			 candidate
-			 merge
-			 post-proc
-			 stable
-			 table
-			 in-hands
-			 acc)
-		   (generate (funcall merge candidate-cards (cdr suits))
-			 select
-			 candidate
-			 merge
-			 post-proc
-			 stable
-			 table
-			 in-hands
-			 acc)))))))
-
-
-
-
-
+;; states: ((C) (D) (H) (S) (C C) ....)
+;;         ((C C C C C) ....(C C C) ... (D) (H) (S))
+;;         ...
+;;
+;; nil means that all cards searched.
+(defun generate (suits goal-p selector successor merge post-proc &optional args)
+  (cond ((funcall goal-p suits) args)
+	(t (let ((selected (funcall selector suits)))
+	     (generate (funcall merge
+				(funcall successor selected)
+				(cdr suits))
+		       goal-p selector successor merge
+		       (funcall post-proc selected args) ; must return args
+		       )))))
+	   
+	   
 
 ;; (generate +suits+
 ;; 		 #'car
@@ -192,3 +148,5 @@
 			  (inner (cdr s) (+ n 1)))))))
 	(inner suits)
 	'DONE))))
+
+
