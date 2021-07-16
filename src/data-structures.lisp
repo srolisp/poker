@@ -2,13 +2,13 @@
 (in-package :poker)
 
 ;; table
-(defun make-table (&key (name nil) (proc #'(lambda (v rv) (cons v (cons rv nil)))))
+(defun make-table (&key (name nil) (proc #'(lambda (v rv) (cons v rv))))
   (let ((local-table (list name)))
     (labels ((__insertf-kv (key value table)
 	       (let ((record (assoc key (cdr table))))
 		 (if record
 		     (setf (cdr record) (funcall proc value (cdr record)))
-		     (setf (cdr table) (cons (cons key value) (cdr table))))
+		     (setf (cdr table) (cons (cons key (funcall proc value (cdr record))) (cdr table))))
 		 table))
 	     (__insertf-multiple-key (keys value &optional (table local-table) (old-keys nil))
 	       ;; (print local-table)
