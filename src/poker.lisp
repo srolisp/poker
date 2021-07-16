@@ -63,17 +63,54 @@
 ;;         ...
 ;;
 ;; nil means that all cards searched.
-(defun generate (suits goal-p selector successor merge post-proc &optional args)
-  (cond ((funcall goal-p suits) args)
+(defun generate (suits 
+		 &optional
+		   (goal-p #'null)
+		   (selector #'car)
+		   (successor #'in-hands)
+		   (merge #'append) 	; like DFS
+		   (post-proc #'pproc)
+		   ;; (args '((acc)))
+		   (args (list (make-table :name 'accs) (make-table :name 'freq)))
+		   )
+  (cond ((funcall goal-p suits) (values (funcall (funcall (car args) 'records)) (funcall (funcall (cadr args) 'records))))
 	(t (let ((selected (funcall selector suits)))
 	     (generate (funcall merge
 				(funcall successor selected)
 				(cdr suits))
-		       goal-p selector successor merge
+		       goal-p selector successor merge post-proc
 		       (funcall post-proc selected args) ; must return args
 		       )))))
-	   
-	   
+	   	   
+;; ((eq suits 'start) (mapcar #'(lambda (s) (list s)) +suits+))
+;; successor function
+;; (C S ...)
+(defun in-hands (suits)
+  (cond ((= +number-in-hand+ (length suits)) nil)
+	(t (mapcar #'(lambda (s) (cons s suits)) +suits+))))
+
+;; in-hands: (C S..)
+;; args: (..)
+;; return : args
+(defun pproc (in-hands args)
+  (cond ((= +number-in-hand+ (length in-hands))
+	 (print (funcall (funcall (car args) 'records)))
+	 (let ((freq (analyze-cards in-hands)))
+	   (if (not (funcall (funcall (cadr args) 'lookup) freq))
+	       (funcall (funcall (car args) 'insert) '(acc) in-hands))
+	   (funcall (funcall (cadr args) 'insert) freq in-hands))
+	 args)
+	(t  args)))
+
+;; return: (1 2 1 ..)
+(defun analyze-cards (in-hands &optional (freq '((S . 0) (D . 0) (H . 0) (C . 0))))
+  (cond ((null in-hands) (mapcar #'(lambda (kv) (cdr kv)) freq))
+	(t (analyze-cards (cdr in-hands)
+			  (mapcar #'(lambda (kv)
+				      (if (eq (car kv) (car in-hands))
+					  (cons (car kv) (+ 1 (cdr kv)))
+					  kv))
+				  freq)))))
 
 ;; (generate +suits+
 ;; 		 #'car
