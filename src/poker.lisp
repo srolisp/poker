@@ -3,7 +3,7 @@
 (in-package :poker)
 
 (defconstant +suits+ '(s d h c))
-(defconstant +numbers+ '(1 2 3 4 5 6 7 8 9 10 J Q K))
+(defconstant +numbers+ '(01 02 03 04 05 06 07 08 09 10 11 12 13))
 (defconstant +number-in-hand+ 5)
 
 ;; states: ((C) (D) (H) (S) (C C) ....)
@@ -22,6 +22,7 @@
 		   (args))
   (cond ((funcall goal-p states) args)
 	(t (let ((selected (funcall selector states)))
+	     ;; (if (eq post-proc #'pproc2) (print states))
 	     (generate (funcall merge
 				(funcall successor selected)
 				(cdr states))
@@ -39,6 +40,9 @@
   (lambda (suits)
     (cond ((= +number-in-hand+ (length suits)) nil)
 	  (t (mapcar #'(lambda (s) (cons s suits)) possible)))))
+
+
+
 
 ;; in-hands: (C S..)
 ;; args: (..)
@@ -69,33 +73,86 @@
 			numbers
 			(cons (mapcar #'(lambda (c) ; c
 					  (mapcar #'(lambda (n)
-						      (intern (format nil "~a~a" c n)))
+						      ;; (intern (format nil "~a~a" c n)))
+						  (intern (format nil "~a~2,'0D" c n)))
 						  numbers))
 				      (car combination-suits)) ; (c c c c c)
 			      generated)))))
 
+;; sorted suits
+(defun sort-suits (suits)
+  (labels ((inner (new sorted &optional passed)
+	     (cond ((null sorted) (append passed (list new)))
+		   ((string-lessp new (car sorted)) (append passed (cons new sorted)))
+		   (t (inner new (cdr sorted) (append passed (cons (car sorted) nil)))))))
+    (inner (car suits) (cdr suits))))
+
+(defun temp (possible)
+  (labels ((succ (n p)
+	     (cond ((= n 0) (car p))
+		   (t (succ (- n 1) (cdr p))))))
+    (lambda (suits)
+      (let ((num-in-hands (length suits)))
+	(cond ((= +number-in-hand+ num-in-hands) nil)
+	      (t (let ((p (succ num-in-hands possible)))
+		   ;; (print suits)
+		   ;; (print (set-difference p suits))
+		   (let ((r (mapcar #'(lambda (p1) ;; (cons p1 suits)
+					(sort-suits (cons p1 suits))
+					)
+				    (set-difference p suits))))
+
+		     r))))))))
+
+(defun pproc2 (in-hands args)
+  (cond ((= +number-in-hand+ (length in-hands))
+	 (if (not (funcall (funcall (cadr args) 'lookup) in-hands))
+	     (funcall (funcall (car args) 'insert) '(acc) in-hands))
+	 (funcall (funcall (cadr args) 'insert) in-hands in-hands)
+	   args)
+	 (t args)))
+
 (defun test ()
   (let ((combi-suits (cdr (assoc 'acc (funcall
 				       (funcall (car (generate '((s) (d) (h) (c))
-							       #'null #'car (in-hands +suits+) #'append #'pproc
-							       (list (make-table :name 'accs) (make-table :name 'freq))))
+							       #'null
+							       #'car
+							       (in-hands +suits+)
+							       #'append
+							       #'pproc
+							       (list
+								(make-table :name 'accs)
+								(make-table :name 'freq))))
 						'records))))))
-    ;; suits: (((S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK)
-    ;;  (S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK)
-    ;;  (S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK)
-    ;;  (S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK)
-    ;;  (S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK))
-    ;; ((D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 DJ DQ DK)
-    ;;  (S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 SJ SQ SK)
     (let ((suits (append-number combi-suits +numbers+)))
-      (let ((temp-suits (car suits)))
-	(let ((cards-at-first (funcall (in-hands (car temp-suits)) nil)))
-	  (generate cards-at-first
-		    #'null
-		    #'car
-		    ))))))
-
-
-
-
-
+      (labels ((inner (s &optional (n 1) (cumul 0))
+		 ;; (let ((fs (open (concatenate 'string "./test" (format nil "~a" n) ".txt")
+		 ;; 		 :direction :output
+		 ;; 		 :if-exists :supersede
+		 ;; 		 :if-does-not-exist :create)))
+		   (cond ((null s) cumul)
+			 (t
+			  (let ((temp-suits (car s))
+				(cum 0))
+			    ;; (print temp-suits)
+			    (let ((cards-at-first (funcall (in-hands (car temp-suits)) nil)))
+			      ;; (print cards-at-first)
+			      (let ((generated (generate cards-at-first
+							    #'null
+							    #'car
+							    (temp temp-suits)
+							    #'append #'pproc2
+							    (list
+							     (make-table :name 'accs)
+							     (make-table :name 'freq
+									 :proc #'(lambda (v rv)
+										   (declare (ignore rv))
+										   v))))))
+				(let ((r (cdr (assoc 'acc (funcall (funcall (car generated) 'records))))))
+				  (dolist (x r)
+				    (setf cum (+ (length x) cum)))
+				;;   (format fs "~{~a ~}~%" x))
+				;; (close fs)
+				)))
+			  (inner (cdr s) (+ n 1) (+ cumul cum)))))))
+	(inner suits)))))
