@@ -3,7 +3,7 @@
 (in-package :poker)
 
 (defconstant +suits+ '(s d h c))
-(defconstant +numbers+ '(01 02 03 04 05 06 07 08 09 10 11 12 13))
+(defconstant +numbers+ '(02 03 04 05 06 07 08 09 10 11 12 13 14)) ; 11 J, 12 Q, 13 K, 14 A
 (defconstant +number-in-hand+ 5)
 
 ;; states: ((S) (D) (H) (C))
@@ -33,7 +33,8 @@
 
 ;; successor function
 ;; (C S ...)
-(defun in-hands (possible)
+;; seperate suits to be searched more.
+(defun combi-with (possible)
   (lambda (suits args)
     (cond ((= 6 (length suits)) ;TODO: 6 (f C01 C02 ..) with tag f.
 	   nil)			; no successor: expanding is over.
@@ -50,23 +51,106 @@
 					;  ..
 					;
 					;  (C01 .....  ))
-			
 			;; generated: args
 			;; TODO: when (C C C C C), get all successor list ((c01 c03 c05 c06 c08) ..)
-			(let ((generated (generate (funcall (in-hands (car new-possible)) nil nil)
+			(let ((generated (generate (funcall (combi-with (car new-possible)) nil nil)
 						   #'null
 						   #'car
-						   (temp new-possible)
+						   (cards-by-combi new-possible)
 						   #'append
-						   #'pproc
-						   (append (append args (list suits)) hands))))
+						   #'memory-cards
+						   (append (append args (list suits) (list freq)) hands))))
+			  (format t "COMBI-WITH:: ~a ~%" (funcall (funcall (cadr generated) 'records)))
 			  ;; r: ((C01 C02 C03 ..) ...(C10..C13))
-			  (let ((r (funcall (funcall (caddr generated) 'lookup) suits)))
-			    (mapcar #'(lambda (r1)
-					(cons 'f r1))
-				    r)))))))
+			  )
+			))))
 	   )
 	  (t (mapcar #'(lambda (s) (cons s suits)) possible)))))
+
+(defun pproc (in-hands args)
+  ;; (declare (ignore in-hands))
+  ;; TODO: if the state is (D02 D01 #01#) followed by (D01 D02 #01#).
+  (cond ((= +number-in-hand+ (length in-hands))
+	 ;; FIXME: repeated process
+	 (let ((freq (get-frequency-cards suits)))
+	   (cond ((check-already-made freq (car args))
+		  )))))
+  args)
+
+;; travel all possible suits. 
+(defun cards-by-combi (possible)
+  (labels ((succ (n p)
+	     (cond ((= n 0) (car p))
+		   (t (succ (- n 1) (cdr p))))))
+    ;; args: freq table, unique check table, pattern table, combi, freq, '(flush) or nil.
+    (lambda (suits args)
+      (let ((num-in-hands (length suits)))
+	(let ((p (succ num-in-hands possible)))	   ; get the possible row.
+	  (cond ((= +number-in-hand+ num-in-hands) ; 5
+		 nil)
+		(t 
+		 (let ((r (mapcar #'(lambda (p1) ;; (cons p1 suits)
+				      ;; sorted suits (D01 C03 H03 C05 S10)
+				      (sort-suits (cons p1 suits)
+						  :key #'(lambda (s) (subseq (symbol-name s) 1))
+						  :test #'string-greaterp))
+				  (set-difference p suits))))
+		   r))))))))
+
+;; post-proc
+;; must return args
+;; suits (C01 C02 C03 C04 .. )
+(defun memory-cards (suits args)
+  ;; usable table1 is for classifying unique suits to prevent to be duplicated.
+  (cond ((not (check-already-made suits (cadr args)))
+	 ;; (3 2) .. (5) .. (1 1 1 1 1) .....
+	 (multiple-value-bind (pn pn-high) (pattern-number #'(lambda (s1 s2)
+								    (string= (subseq (symbol-name s1) 1)
+									     (subseq (symbol-name s2) 1)))
+								suits) ;suits is sorted.
+	   ;; pn: (2 1 1 1), pn-high: 3
+	   (let ((r (funcall (funcall (caddr args) 'lookup) pn))
+		 (flush (caddr (cdddr args)))) ; get hands according pn.
+	     ;; r: 2-pair
+	     (cond ((eq r '2cases)	; high card or straight
+		    (multiple-value-bind (hands high) (is-straight (to-int-list suits))
+		      (cond ((and flush hands (= high 14))
+			     (funcall (funcall (cadr args) 'insert) suits
+				      (cons pn-high (cons 'royal (cons hands flush)))))
+			    ((and flush hands)
+			     (funcall (funcall (cadr args) 'insert) suits
+				      (cons pn-high (cons hands flush))))
+			    (flush	; just flush
+			     (funcall (funcall (cadr args) 'insert) suits
+				      (cons pn-high flush)))
+			    (hands	; jsut hands
+			     (funcall (funcall (cadr args) 'insert) suits
+				      (cons pn-high (list hands))))
+			    (t
+			     (funcall (funcall (cadr args) 'insert) suits
+				      (cons pn-high nil)))
+			    )))
+		   (t		; one pair, two pair, three, four, fl.
+		    (funcall (funcall (cadr args) 'insert) suits
+			     (cons pn-high (list r)))))
+	   args)))
+	(t args)))
+
+(defun get-hands-values (numbers pn-hands)
+  (cond ((eq pn-hands '2cases)
+	 )))
+
+(defun to-int-list (suits)
+  (mapcar #'(lambda (s)
+	      (parse-integer (subseq (symbol-name s) 1)))
+	  suits))
+
+(defun is-straight (numbers &optional (prev 0) (high 0))
+  ;; pn: (1 1 1 1 1)
+  (cond ((null numbers) (values 'straight high))
+	((= prev 0) (is-straight (cdr numbers) (car numbers) (car numbers)))
+	((= prev (+ (car numbers) 1)) (is-straight (cdr numbers) (car numbers) high))
+	(t (values nil high))))
 
 (defun is-flush (freq)
   (find-if #'(lambda (x) (= x 5)) freq))
@@ -116,34 +200,20 @@
     (inner (car suits) (cdr suits))))
 
 ;; sorted suits (S10 C05 C03 H03 D01)
-(defun pattern-number (func sorted-suits &optional acc (acc2 1) (max (car sorted-suits)))
+(defun pattern-number (func sorted-suits &optional acc (acc2 1) (high (car sorted-suits)) (max nil))
   (labels ((inner (item remained)
-	     (cond ((null item) (pattern-number func nil acc acc2 max))
+	     (cond ((null item) (pattern-number func nil acc acc2 high max))
 		   (t (let ((p (funcall func item (car remained))))
-			(cond (p (pattern-number func (cons item (cdr remained)) acc (+ acc2 1) max))
-			      (t (pattern-number func remained (append acc (list acc2)) 1 max))))))))
-    (cond ((null sorted-suits) (values acc (parse-integer (subseq (symbol-name max) 1))))
+			(cond ((and p (null max))
+			       (pattern-number func (cons item (cdr remained)) acc (+ acc2 1) high item))
+			      (p (pattern-number func (cons item (cdr remained)) acc (+ acc2 1) high max))
+			      (t (pattern-number func remained (append acc (list acc2)) 1 high max))))))))
+    (cond ((null sorted-suits) (if max (values acc (parse-integer (subseq (symbol-name max) 1)))
+				   (values acc (parse-integer (subseq (symbol-name high) 1)))))
 	  (t (inner (car sorted-suits) (cdr sorted-suits))))))
 
 ;; possible is not sorted.
-(defun temp (possible)
-  (labels ((succ (n p)
-	     (cond ((= n 0) (car p))
-		   (t (succ (- n 1) (cdr p))))))
-    (lambda (suits args)
-      (declare (ignore args))
-      (let ((num-in-hands (length suits)))
-	(let ((p (succ num-in-hands possible)))
-	  (cond ((= +number-in-hand+ num-in-hands) ; 5
-		 nil)
-		(t 
-		 (let ((r (mapcar #'(lambda (p1) ;; (cons p1 suits)
-				      ;; sorted suits (D01 C03 H03 C05 S10)
-				      (sort-suits (cons p1 suits)
-						  :key #'(lambda (s) (subseq (symbol-name s) 1))
-						  :test #'string-greaterp))
-				  (set-difference p suits))))
-		   r))))))))
+
 
 ;; (defun temp (possible)
 ;;   (labels ((succ (n p)
@@ -183,9 +253,6 @@
 ;; 				  (set-difference p suits))))
 ;; 		   r))))))))
 
-(defun pproc (in-hands args)
-  (declare (ignore in-hands))
-  args)
 
 ;; sorted (C01 C02 ..)
 (defun pproc2 ()
@@ -211,16 +278,23 @@
 	 (t args)))
 
 (defun test ()
-  (generate '((s) (d) (h) (c))
+  (let ((table (make-table :name 'pattern)))
+    ;; TODO: rank like (1 . four) 
+    (funcall (funcall table 'insert) '(4 1) 'four)
+    (funcall (funcall table 'insert) '(3 2) 'fullhouse)
+    (funcall (funcall table 'insert) '(3 1 1) 'three)
+    (funcall (funcall table 'insert) '(2 2 1) '2-pair)
+    (funcall (funcall table 'insert) '(2 1 1 1) '1-pair)
+    (funcall (funcall table 'insert) '(1 1 1 1 1) '2cases)
+    (generate '((s) (d) (h) (c))
 	    #'null
 	    #'car
-	    (in-hands +suits+)
+	    (combi-with +suits+)
 	    #'append
 	    #'pproc
 	    (list
-	     (make-table :name 'freq)
+	     (make-table :name 'freq) 
 	     (make-table :name 'accs)
-	     (make-table :name 'accs2)
-	     ))
-  )
+	     table
+	     ))))
 
