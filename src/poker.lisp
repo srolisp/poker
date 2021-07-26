@@ -128,11 +128,15 @@
 		      (format fs "~a " count)
 		      ;; r: 2-pair
 		      (cond ((eq r '2cases)	; high card or straight
-			     (multiple-value-bind (hands high) (is-straight (to-int-list suits))
+			     (multiple-value-bind (hands high flip) (is-straight (to-int-list suits))
 			       (cond ((and flush hands (= high 14))
 				      (funcall (funcall (cadr args) 'insert) suits
 					       (cons pn-high (cons 'royal (cons hands flush))))
 				      (format fs "~{~a ~}~a~{~a ~}~%" suits pn-high (cons 'royal (cons hands flush))))
+				     ((and flush hands flip)
+				      (funcall (funcall (cadr args) 'insert) suits
+					       (cons pn-high (cons hands flush)))
+				      (format fs "~{~a ~}~a~{~a ~}~%" (append (cdr suits) (list (car suits))) pn-high (cons hands flush)))
 				     ((and flush hands)
 				      (funcall (funcall (cadr args) 'insert) suits
 					       (cons pn-high (cons hands flush)))
@@ -141,7 +145,11 @@
 				      (funcall (funcall (cadr args) 'insert) suits
 					       (cons pn-high flush))
 				      (format fs "~{~a ~}~a~{~a ~}~%" suits pn-high flush))
-				     (hands	; jsut hands
+				     ((and hands flip)	; just hands
+				      (funcall (funcall (cadr args) 'insert) suits
+					       (cons pn-high (list hands)))
+				      (format fs "~{~a ~}~a~{~a ~}~%" (append (cdr suits) (list (car suits))) pn-high (list hands)))
+				     (hands	; just hands
 				      (funcall (funcall (cadr args) 'insert) suits
 					       (cons pn-high (list hands)))
 				      (format fs "~{~a ~}~a~{~a ~}~%" suits pn-high (list hands)))
@@ -168,12 +176,13 @@
 	      (parse-integer (subseq (symbol-name s) 1)))
 	  suits))
 
-(defun is-straight (numbers &optional (prev 0) (high 0))
+(defun is-straight (numbers &optional (prev 0) (high 0) (flip nil))
   ;; pn: (1 1 1 1 1)
-  (cond ((null numbers) (values 'straight high))
-	((= prev 0) (is-straight (cdr numbers) (car numbers) (car numbers)))
-	((= prev (+ (car numbers) 1)) (is-straight (cdr numbers) (car numbers) high))
-	(t (values nil high))))
+  (cond ((null numbers) (values 'straight high flip))
+	((= prev 0) (is-straight (cdr numbers) (car numbers) (car numbers) flip))
+	((= prev (+ (car numbers) 1)) (is-straight (cdr numbers) (car numbers) high flip))
+	((and (= prev 14) (= (car numbers) 5)) (is-straight (cdr numbers) (car numbers) (car numbers) t)) ; special case A 5 4 3 2 
+	(t (values nil high nil))))
 
 (defun is-flush (freq)
   (find-if #'(lambda (x) (= x 5)) freq))
